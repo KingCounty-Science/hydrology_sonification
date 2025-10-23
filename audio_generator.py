@@ -32,8 +32,6 @@ df = df[(df["datetime"] >= "2024-10-01") & (df["datetime"] <= "2025-10-01")]
 #df["data"] = 2 * (df['data'] - df['data'].min()) / (df['data'].max() - df['data'].min()) - 1 # -1 to q
 df = df.set_index('datetime').resample('5T').interpolate(method='linear', limit=6)  # Only interpolate up to 6 consecutive NaN values
 
-#df = df.asfreq('H')
-
 #df = df.set_index('datetime').resample('300s').interpolate(method='linear', limit=6) 
 # 1 day centered rolling average this is like smoothing
 #df['1h_data'] = df['data'].rolling(window='1h', center=True).mean()
