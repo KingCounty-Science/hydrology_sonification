@@ -130,10 +130,10 @@ def get_data(site, resample_interval, sample_rate, hertz):
 
 #58a, 02a, 11u_solar_radiation  data\raw_hydrological_data\11u_solar_radiation_raw_data.csv
 #"11u_solar_radiation"
-site = "02a" #"11u_solar_radiation_day" # f"data/raw_hydrological_data/{site}_raw_data.csv"
+site = "58a" #"11u_solar_radiation_day" # f"data/raw_hydrological_data/{site}_raw_data.csv"
 resample_interval = '1D' #'15T' # '1D' '1H'
 
-sample_rate = 600 # higher sample rate will speed it up
+sample_rate = 800 # higher sample rate will speed it up
 
 # convert to frequency 
 #hertz = 261.625565
