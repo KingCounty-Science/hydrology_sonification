@@ -61,7 +61,7 @@ def get_data(site, resample_interval, sample_rate, hertz):
 
     all_dfs = []
 
-    raw = raw[325:330]
+    #raw = raw[325:330]
     for index, row in raw.iterrows():
         #sample_rate = 600 dont need to define it is set in function call
         num_samples = 200
@@ -90,7 +90,7 @@ def get_data(site, resample_interval, sample_rate, hertz):
     # If that's still too quiet, amplify BEFORE converting:
     amplification = 5  # Try 1.5x, 2x, etc.
     audio_data = np.int16(sine_wave / np.max(np.abs(sine_wave)) * 32767) #32767# higher sample rate will speed it up 32767
-    wavfile.write(f"data/sound_files/{site}_soundfile_resample interval {resample_interval} sample rate_{sample_rate}_hertz_{hertz}.wav", sample_rate, audio_data)
+    wavfile.write(f"data/sound_files/{site}_soundfile_resample interval {resample_interval} sample rate_{sample_rate}_hertz_{hertz}.mp3", sample_rate, audio_data)
     combined_df['mean_aplitude'] = combined_df.groupby('datetime')['amplitude'].transform('mean')
 
 
@@ -131,7 +131,7 @@ def get_data(site, resample_interval, sample_rate, hertz):
 #58a, 02a, 11u_solar_radiation  data\raw_hydrological_data\11u_solar_radiation_raw_data.csv
 #"11u_solar_radiation"
 site = "02a" #"11u_solar_radiation_day" # f"data/raw_hydrological_data/{site}_raw_data.csv"
-resample_interval = '3D' #'15T' # '1D' '1H'
+resample_interval = '1D' #'15T' # '1D' '1H'
 
 sample_rate = 600 # higher sample rate will speed it up
 
