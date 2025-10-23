@@ -25,11 +25,7 @@ q_95 = df['data'].quantile(.95)
 df = df[(df["datetime"] >= "2024-10-01") & (df["datetime"] <= "2025-10-01")]
 
 # Resample or interpolate the data to a fixed sampling rate
-# Here, we'll resample the data to 44100 Hz (typical for audio)
-# resampe 1S is seconds 5T is minutes
-#df = df.set_index('datetime').resample('10s').ffill() # higher resample rate will lower the pitch and make audio file longer
 
-# 5 minutes , resample to a day, calculate difference, then downsample back to 5 minutes
 # inital downsampling (ie 1 minute) will create less record by record change
 
 # 
