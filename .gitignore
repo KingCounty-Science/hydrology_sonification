@@ -5,11 +5,11 @@ data/sound_files/*
 
 !data/figures/.gitkeep
 !data/raw_hydrological_data/.gitkeep
-
+!data/sound_files/.gitkeep
 
 !data/raw_hydrological_data/58a_raw_data.csv
 !data/raw_hydrological_data/02a_raw_data.csv
-!data/sound_files/.gitkeep
+
 # But keep the directory itself by not ignoring .gitkeep
 data/sound_files/.gitkeep
 
