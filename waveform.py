@@ -5,6 +5,9 @@ import numpy as np
 from scipy.io import wavfile
 import numpy as np
 import matplotlib.pyplot as plt
+from scipy.io import wavfile
+
+
 def create_sine_wave(amplitude, frequency, num_samples, sample_rate, datetime):
     '''Create a sine wave that starts and ends at zero amplitude.
     
@@ -90,7 +93,41 @@ def get_data(site, resample_interval, sample_rate, hertz):
     # If that's still too quiet, amplify BEFORE converting:
     amplification = 5  # Try 1.5x, 2x, etc.
     audio_data = np.int16(sine_wave / np.max(np.abs(sine_wave)) * 32767) #32767# higher sample rate will speed it up 32767
-    wavfile.write(f"data/sound_files/{site}_soundfile_resample interval {resample_interval} sample rate_{sample_rate}_hertz_{hertz}.mp3", sample_rate, audio_data)
+    wavfile.write(f"data/sound_files/{site}_soundfile_resample interval {resample_interval} sample rate_{sample_rate}_hertz_{hertz}.wav", sample_rate, audio_data)
+    #save as mp3
+    # First write as WAV
+    temp_wav = "temp.wav"
+    wavfile.write(temp_wav, sample_rate, audio_data)
+
+        # Convert to MP3
+    # Write temp WAV first
+    temp_wav = "temp.wav"
+    wavfile.write(temp_wav, sample_rate, audio_data)
+
+    # Convert to MP3
+    from pydub import AudioSegment
+    import imageio_ffmpeg as ffmpeg
+   
+
+    # Set ffmpeg path
+    AudioSegment.converter = ffmpeg.get_ffmpeg_exe()
+
+    # Convert your numpy audio_data to AudioSegment
+    audio_segment = AudioSegment(
+        audio_data.tobytes(),
+        frame_rate=sample_rate,
+        sample_width=audio_data.dtype.itemsize,
+        channels=1  # use 2 if stereo
+    )
+
+    # Export as MP3
+    audio_segment.export(
+        f"data/sound_files/{site}_soundfile_resample_interval_{resample_interval}_sample_rate_{sample_rate}_hertz_{hertz}.mp3",
+        format="mp3"
+    )
+
+    
+                
     combined_df['mean_aplitude'] = combined_df.groupby('datetime')['amplitude'].transform('mean')
 
 
@@ -130,8 +167,8 @@ def get_data(site, resample_interval, sample_rate, hertz):
 
 #58a, 02a, 11u_solar_radiation  data\raw_hydrological_data\11u_solar_radiation_raw_data.csv
 #"11u_solar_radiation"
-site = "58a" #"11u_solar_radiation_day" # f"data/raw_hydrological_data/{site}_raw_data.csv"
-resample_interval = '1D' #'15T' # '1D' '1H'
+site = "02a" #"11u_solar_radiation_day" # f"data/raw_hydrological_data/{site}_raw_data.csv"
+resample_interval = '3D' #'15T' # '1D' '1H'
 
 sample_rate = 800 # higher sample rate will speed it up
 
