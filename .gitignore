@@ -1,0 +1,15 @@
+# Ignore all files in the sound_files directory
+data/figures/*
+data/raw_hydrological_data/*
+data/sound_files/*
+
+!data/figures/.gitkeep
+!data/raw_hydrological_data/.gitkeep
+!data/sound_files/.gitkeep
+# But keep the directory itself by not ignoring .gitkeep
+data/sound_files/.gitkeep
+
+# Ignore all files in the temp directory
+temp/*
+# Ignore all .log files
+*.log
