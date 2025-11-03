@@ -1,16 +1,11 @@
 import pandas as pd
 import numpy as np
-import pandas as pd
-import numpy as np
 from scipy.io import wavfile
-import numpy as np
 import matplotlib.pyplot as plt
-from scipy.io import wavfile
 from pydub import AudioSegment
-import matplotlib.pyplot as plt
 import matplotlib.animation as animation
-from scipy.io import wavfile
 from PIL import Image
+import subprocess
 from matplotlib.backends.backend_agg import FigureCanvasAgg
 import imageio
 import io
@@ -73,8 +68,6 @@ def get_data(site, resample_interval, sample_rate, hertz):
     raw["data_offset"] = raw["data_offset"] + offset
     raw["data_offset"] = raw["data_offset"].round(0)
     
-    
-
     all_dfs = []
 
     #raw = raw[325:330]
@@ -111,10 +104,31 @@ def get_data(site, resample_interval, sample_rate, hertz):
     # Write temp WAV first
     temp_wav = "temp.wav"
     wavfile.write(temp_wav, sample_rate, audio_data)
+     # Calculate mean amplitude by datetime
+    combined_df['mean_amplitude'] = combined_df.groupby('datetime')['amplitude'].transform('mean')
+    fig, ax1 = plt.subplots(1, 1, figsize=(80, 60)) # witdh_inches, height_inches
+    
+    # Configure primary axis (amplitude)
+    color = 'tab:blue'
+    ax1.set_xlabel('Index', fontsize=12)
+    ax1.set_ylabel('Mean Amplitude', color=color, fontsize=12)
+    line1, = ax1.plot([], [], color=color, linewidth=2, label='Mean Amplitude')
+    ax1.tick_params(axis='y', labelcolor=color)
+    ax1.grid(True, alpha=0.3)
+    ax1.set_xlim(combined_df.index.min(), combined_df.index.max())
+    ax1.set_ylim(combined_df['amplitude'].min(), combined_df['amplitude'].max())
+    
+    # Configure secondary axis (frequency)
+    ax2 = ax1.twinx()
+    color = 'tab:orange'
+    ax2.set_ylabel('Frequency', color=color, fontsize=12)
+    line2, = ax2.plot([], [], color=color, linewidth=2, label='Frequency')
+    ax2.tick_params(axis='y', labelcolor=color)
+    ax2.set_ylim(combined_df['frequency'].min(), combined_df['frequency'].max())
+    
+    plt.close(fig)
+    plt.savefig(f"data/figures/{site}_animation_{resample_interval}_sample_rate_{sample_rate}_hertz_{hertz}.png")
 
-    
-            
-    
     return combined_df
 
 def make_video(site, resample_interval, sample_rate, hertz, combined_df):
@@ -135,8 +149,7 @@ def make_video(site, resample_interval, sample_rate, hertz, combined_df):
         DataFrame containing 'amplitude' and 'frequency' columns with datetime index
     """
     
-    # Calculate mean amplitude by datetime
-    combined_df['mean_amplitude'] = combined_df.groupby('datetime')['amplitude'].transform('mean')
+   
     
     # Get audio duration to determine video length
     audio_path = f"data/sound_files/{site}_soundfile_resample interval {resample_interval} sample rate_{sample_rate}_hertz_{hertz}.wav"
@@ -150,7 +163,7 @@ def make_video(site, resample_interval, sample_rate, hertz, combined_df):
     print(f"Audio duration: {audio_duration:.2f} seconds")
     
     # Calculate number of video frames needed
-    fps = 30
+    fps = 15
     n_frames = int(audio_duration * fps)
     print(f"Generating {n_frames} frames at {fps} fps")
     
@@ -182,11 +195,7 @@ def make_video(site, resample_interval, sample_rate, hertz, combined_df):
     # Add vertical line marker and time display
     vline = ax1.axvline(x=combined_df.index[0], color='red', linewidth=2, 
                         linestyle='--', label='Current Position')
-    # adds a time tracker
-    #time_text = ax1.text(0.02, 0.95, '', transform=ax1.transAxes, 
-    #                    fontsize=12, verticalalignment='top',
-    #                    bbox=dict(boxstyle='round', facecolor='wheat', alpha=0.5))
-    
+   
     plt.tight_layout()
     
     def update(frame):
@@ -228,8 +237,6 @@ def make_video(site, resample_interval, sample_rate, hertz, combined_df):
     imageio.mimsave(video_no_audio_path, frames, fps=fps)
     
     # Combine video with audio using ffmpeg
-    import subprocess
-    
     ffmpeg_path = r"C:\Users\ianrh\AppData\Local\Programs\Python\Python312\Lib\site-packages\imageio_ffmpeg\binaries\ffmpeg-win-x86_64-v7.1.exe"
     output_path = f"data/figures/{site}_animation_{resample_interval}_sample_rate_{sample_rate}_hertz_{hertz}.mp4"
     
@@ -249,26 +256,20 @@ def make_video(site, resample_interval, sample_rate, hertz, combined_df):
     ], check=True, capture_output=True, text=True)
     
     print(f"✓ Video with audio saved to {output_path}")
-    
-    """ # Optional: Save as GIF
-    gif_path = f"data/figures/{site}_animation.gif"
-    print("Saving GIF...")
-    imageio.mimsave(gif_path, frames, fps=20, loop=0)
-    print(f"✓ GIF saved to {gif_path}")"""
-    
+    ### need to remove video without audio  # Save video without audio
+    ##video_no_audio_path = f"data/figures/{site}_animation_no_audio.mp4"
     # Close figure to free memory
     plt.close(fig)
     
     return output_path
-    # Save final frame as static image
-    #plt.savefig(f"data/figures/{site}_animation_{resample_interval}_sample_rate_{sample_rate}_hertz_{hertz}.png")
+    
     #58a, 02a, 11u_solar_radiation  data\raw_hydrological_data\11u_solar_radiation_raw_data.csv
 #"11u_solar_radiation"
-site = "58d" #"58a" #"11u_solar_radiation_day" # f"data/raw_hydrological_data/{site}_raw_data.csv"
+site = "cherry_creek_water_temperature" #"58a" #"11u_solar_radiation_day" # f"data/raw_hydrological_data/{site}_raw_data.csv"
 resample_interval =  '1D' #'3D'#'15T' # '1D' '1H'
-hertz = 130.81
-sample_rate = 2000 # higher sample rate will speed it up
-# 899 is pretty good
+hertz = 246.9417
+sample_rate =  1500# higher sample rate will speed it up
+# 800 is pretty good
 
 # convert to frequency 
 #hertz = 261.625565
@@ -276,6 +277,6 @@ sample_rate = 2000 # higher sample rate will speed it up
 # c4: 261.625565
 # b3: 246.9417
 # a3: 220.0000
-# c3 130.81
+# c3 130.81 # too low
 combined_df = get_data(site, resample_interval, sample_rate, hertz)
 make_video(site, resample_interval, sample_rate, hertz, combined_df)
