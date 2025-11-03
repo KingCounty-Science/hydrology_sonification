@@ -99,6 +99,7 @@ def get_data(site, resample_interval, sample_rate, hertz):
     combined_df["amplitude"] = combined_df['amplitude'].replace(0, np.nan)
     combined_df["amplitude"] = combined_df["amplitude"].interpolate(method='linear', limit_direction='both')
     combined_df["amplitude"] = combined_df["amplitude"] / np.max(np.abs(combined_df["amplitude"]))
+    #print(combined_df)
     
     #print(combined_df)
     sine_wave = combined_df["amplitude"].values
@@ -220,36 +221,37 @@ def make_video(site, resample_interval, sample_rate, hertz, combined_df):
         
         if frame_num % 100 == 0:
             print(f"Frame {frame_num}/{n_frames}")
-    # Create video data in memory
-    print("Creating video data...")
-    video_buffer = io.BytesIO()
-    imageio.mimsave(video_buffer, frames, fps=fps, format='mp4')
-    video_buffer.seek(0)
-
+    
+    # Save video without audio
+    video_no_audio_path = f"data/figures/{site}_animation_no_audio.mp4"
+    print("Saving video...")
+    imageio.mimsave(video_no_audio_path, frames, fps=fps)
+    
     # Combine video with audio using ffmpeg
     import subprocess
-
+    
     ffmpeg_path = r"C:\Users\ianrh\AppData\Local\Programs\Python\Python312\Lib\site-packages\imageio_ffmpeg\binaries\ffmpeg-win-x86_64-v7.1.exe"
     output_path = f"data/figures/{site}_animation_{resample_interval}_sample_rate_{sample_rate}_hertz_{hertz}.mp4"
-
+    
     print(f"Combining video and audio...")
+    print(f"  Video: {video_no_audio_path}")
     print(f"  Audio: {audio_path}")
     print(f"  Output: {output_path}")
-
-    process = subprocess.run([
+    
+    subprocess.run([
         ffmpeg_path, '-y',
-        '-f', 'mp4',
-        '-i', 'pipe:0',  # Read video from stdin
+        '-i', video_no_audio_path,
         '-i', audio_path,
-        '-c:v', 'libx264',  # Changed from 'copy' to 'libx264'
-        '-preset', 'fast',  # Add preset for faster encoding
-        '-pix_fmt', 'yuv420p',  # Ensure compatibility
+        '-c:v', 'copy',
         '-c:a', 'aac',
         '-shortest',
         output_path
-    ], input=video_buffer.read(), check=True, capture_output=True)
-    # Optional: Save as GIF
-    """ gif_path = f"data/figures/{site}_animation.gif"
+    ], check=True, capture_output=True, text=True)
+    
+    print(f"✓ Video with audio saved to {output_path}")
+    
+    """ # Optional: Save as GIF
+    gif_path = f"data/figures/{site}_animation.gif"
     print("Saving GIF...")
     imageio.mimsave(gif_path, frames, fps=20, loop=0)
     print(f"✓ GIF saved to {gif_path}")"""
@@ -262,11 +264,11 @@ def make_video(site, resample_interval, sample_rate, hertz, combined_df):
     #plt.savefig(f"data/figures/{site}_animation_{resample_interval}_sample_rate_{sample_rate}_hertz_{hertz}.png")
     #58a, 02a, 11u_solar_radiation  data\raw_hydrological_data\11u_solar_radiation_raw_data.csv
 #"11u_solar_radiation"
-site = "58a" #"58a" #"11u_solar_radiation_day" # f"data/raw_hydrological_data/{site}_raw_data.csv"
-resample_interval =  '5D' #'3D'#'15T' # '1D' '1H'
-hertz = 138.81 #261.625565
-sample_rate = 800 # higher sample rate will speed it up
-# 800 is pretty good  # 2000 is a good sample rate for 1D but you will ned to lower the hertz because it gets kinda high
+site = "58d" #"58a" #"11u_solar_radiation_day" # f"data/raw_hydrological_data/{site}_raw_data.csv"
+resample_interval =  '1D' #'3D'#'15T' # '1D' '1H'
+hertz = 130.81
+sample_rate = 2000 # higher sample rate will speed it up
+# 899 is pretty good
 
 # convert to frequency 
 #hertz = 261.625565
