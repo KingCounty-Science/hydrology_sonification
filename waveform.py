@@ -6,7 +6,20 @@ from scipy.io import wavfile
 import numpy as np
 import matplotlib.pyplot as plt
 from scipy.io import wavfile
+from pydub import AudioSegment
+import matplotlib.pyplot as plt
+import matplotlib.animation as animation
+from scipy.io import wavfile
+from PIL import Image
+from matplotlib.backends.backend_agg import FigureCanvasAgg
+import imageio
+import io
+import matplotlib.animation as animation
+# Using FFMpegWriter with more control
+from matplotlib.animation import FFMpegWriter
+import imageio_ffmpeg
 
+ffmpeg_path = imageio_ffmpeg.get_ffmpeg_exe()
 
 def create_sine_wave(amplitude, frequency, num_samples, sample_rate, datetime):
     '''Create a sine wave that starts and ends at zero amplitude.
@@ -86,8 +99,7 @@ def get_data(site, resample_interval, sample_rate, hertz):
     combined_df["amplitude"] = combined_df['amplitude'].replace(0, np.nan)
     combined_df["amplitude"] = combined_df["amplitude"].interpolate(method='linear', limit_direction='both')
     combined_df["amplitude"] = combined_df["amplitude"] / np.max(np.abs(combined_df["amplitude"]))
-    #print(combined_df)
-    import matplotlib.pyplot as plt
+    
     #print(combined_df)
     sine_wave = combined_df["amplitude"].values
     # If that's still too quiet, amplify BEFORE converting:
@@ -95,82 +107,166 @@ def get_data(site, resample_interval, sample_rate, hertz):
     audio_data = np.int16(sine_wave / np.max(np.abs(sine_wave)) * 32767) #32767# higher sample rate will speed it up 32767
     wavfile.write(f"data/sound_files/{site}_soundfile_resample interval {resample_interval} sample rate_{sample_rate}_hertz_{hertz}.wav", sample_rate, audio_data)
     #save as mp3
-    # First write as WAV
-    temp_wav = "temp.wav"
-    wavfile.write(temp_wav, sample_rate, audio_data)
-
-        # Convert to MP3
     # Write temp WAV first
     temp_wav = "temp.wav"
     wavfile.write(temp_wav, sample_rate, audio_data)
 
-    # Convert to MP3
-    from pydub import AudioSegment
-    import imageio_ffmpeg as ffmpeg
-   
-
-    # Set ffmpeg path
-    AudioSegment.converter = ffmpeg.get_ffmpeg_exe()
-
-    # Convert your numpy audio_data to AudioSegment
-    audio_segment = AudioSegment(
-        audio_data.tobytes(),
-        frame_rate=sample_rate,
-        sample_width=audio_data.dtype.itemsize,
-        channels=1  # use 2 if stereo
-    )
-
-    # Export as MP3
-    audio_segment.export(
-        f"data/sound_files/{site}_soundfile_resample_interval_{resample_interval}_sample_rate_{sample_rate}_hertz_{hertz}.mp3",
-        format="mp3"
-    )
-
     
-                
-    combined_df['mean_aplitude'] = combined_df.groupby('datetime')['amplitude'].transform('mean')
+            
+    
+    return combined_df
 
-
-    # Create figure and primary axis
-    fig, ax1 = plt.subplots(figsize=(10, 6))
-
-    # Plot mean_amplitude on the first y-axis
+def make_video(site, resample_interval, sample_rate, hertz, combined_df):
+    """
+    Create an animated video visualization with audio overlay.
+    
+    Parameters:
+    -----------
+    site : str
+        Site identifier for file naming
+    resample_interval : str
+        Resample interval used in data processing
+    sample_rate : int
+        Audio sample rate
+    hertz : float
+        Base frequency in hertz
+    combined_df : pd.DataFrame
+        DataFrame containing 'amplitude' and 'frequency' columns with datetime index
+    """
+    
+    # Calculate mean amplitude by datetime
+    combined_df['mean_amplitude'] = combined_df.groupby('datetime')['amplitude'].transform('mean')
+    
+    # Get audio duration to determine video length
+    audio_path = f"data/sound_files/{site}_soundfile_resample interval {resample_interval} sample rate_{sample_rate}_hertz_{hertz}.wav"
+    
+    import wave
+    with wave.open(audio_path, 'r') as audio_file:
+        frames_audio = audio_file.getnframes()
+        rate = audio_file.getframerate()
+        audio_duration = frames_audio / float(rate)
+    
+    print(f"Audio duration: {audio_duration:.2f} seconds")
+    
+    # Calculate number of video frames needed
+    fps = 30
+    n_frames = int(audio_duration * fps)
+    print(f"Generating {n_frames} frames at {fps} fps")
+    
+    # Create figure with dimensions divisible by 16 (for video encoding)
+    dpi = 100
+    width_inches = 1200 / dpi  # = 12 inches = 1200 pixels
+    height_inches = 608 / dpi  # = 6.08 inches = 608 pixels
+    
+    fig, ax1 = plt.subplots(1, 1, figsize=(width_inches, height_inches), dpi=dpi)
+    
+    # Configure primary axis (amplitude)
     color = 'tab:blue'
     ax1.set_xlabel('Index', fontsize=12)
     ax1.set_ylabel('Mean Amplitude', color=color, fontsize=12)
-    ax1.plot(combined_df.index, combined_df['amplitude'], color=color, linewidth=2, label='Mean Amplitude')
+    line1, = ax1.plot([], [], color=color, linewidth=2, label='Mean Amplitude')
     ax1.tick_params(axis='y', labelcolor=color)
     ax1.grid(True, alpha=0.3)
-
-    # Create second y-axis sharing the same x-axis
+    ax1.set_xlim(combined_df.index.min(), combined_df.index.max())
+    ax1.set_ylim(combined_df['amplitude'].min(), combined_df['amplitude'].max())
+    
+    # Configure secondary axis (frequency)
     ax2 = ax1.twinx()
-
-    # Plot frequency on the second y-axis
     color = 'tab:orange'
     ax2.set_ylabel('Frequency', color=color, fontsize=12)
-    ax2.plot(combined_df.index, combined_df["frequency"], color=color, linewidth=2, label='Frequency')
+    line2, = ax2.plot([], [], color=color, linewidth=2, label='Frequency')
     ax2.tick_params(axis='y', labelcolor=color)
-
-    # Add title
-    plt.title('Mean Amplitude and Frequency vs Index', fontsize=14, fontweight='bold')
-
-    # Add legends
-    lines1, labels1 = ax1.get_legend_handles_labels()
-    lines2, labels2 = ax2.get_legend_handles_labels()
-    ax1.legend(lines1 + lines2, labels1 + labels2, loc='upper left')
-
+    ax2.set_ylim(combined_df['frequency'].min(), combined_df['frequency'].max())
+    
+    # Add vertical line marker and time display
+    vline = ax1.axvline(x=combined_df.index[0], color='red', linewidth=2, 
+                        linestyle='--', label='Current Position')
+    # adds a time tracker
+    #time_text = ax1.text(0.02, 0.95, '', transform=ax1.transAxes, 
+    #                    fontsize=12, verticalalignment='top',
+    #                    bbox=dict(boxstyle='round', facecolor='wheat', alpha=0.5))
+    
     plt.tight_layout()
-    #lt.show()
- 
-    plt.savefig(f'data/figures/{site}_mean_amplitude_interval_{resample_interval}_sample rate_{sample_rate}_hertz_{hertz}.png')
-    plt.plot(raw.index, raw["data_offset"])
+    
+    def update(frame):
+        """Update animation for given frame number"""
+        n_points = len(combined_df)
+        current_idx = int((frame / n_frames) * n_points)
+        current_idx = min(current_idx, n_points - 1)  # Prevent index out of bounds
+        
+        # Update data lines
+        line1.set_data(combined_df.index[:current_idx], combined_df['amplitude'][:current_idx])
+        line2.set_data(combined_df.index[:current_idx], combined_df['frequency'][:current_idx])
+        
+        # Update vertical line position
+        if current_idx > 0:
+            vline.set_xdata([combined_df.index[current_idx]])
+        
+        # Update frame info text
+        #time_text.set_text(f'Frame: {frame}\nIndex: {current_idx}')
+        
+        return line1, line2, vline, #time_text
+    
+    # Generate video frames
+    frames = []
+    canvas = FigureCanvasAgg(fig)
+    
+    print("Generating frames...")
+    for frame_num in range(n_frames):
+        update(frame_num)
+        canvas.draw()
+        img = np.asarray(canvas.buffer_rgba()).copy()
+        frames.append(img[:, :, :3])  # Remove alpha channel
+        
+        if frame_num % 100 == 0:
+            print(f"Frame {frame_num}/{n_frames}")
+    # Create video data in memory
+    print("Creating video data...")
+    video_buffer = io.BytesIO()
+    imageio.mimsave(video_buffer, frames, fps=fps, format='mp4')
+    video_buffer.seek(0)
 
-#58a, 02a, 11u_solar_radiation  data\raw_hydrological_data\11u_solar_radiation_raw_data.csv
+    # Combine video with audio using ffmpeg
+    import subprocess
+
+    ffmpeg_path = r"C:\Users\ianrh\AppData\Local\Programs\Python\Python312\Lib\site-packages\imageio_ffmpeg\binaries\ffmpeg-win-x86_64-v7.1.exe"
+    output_path = f"data/figures/{site}_animation_{resample_interval}_sample_rate_{sample_rate}_hertz_{hertz}.mp4"
+
+    print(f"Combining video and audio...")
+    print(f"  Audio: {audio_path}")
+    print(f"  Output: {output_path}")
+
+    process = subprocess.run([
+        ffmpeg_path, '-y',
+        '-f', 'mp4',
+        '-i', 'pipe:0',  # Read video from stdin
+        '-i', audio_path,
+        '-c:v', 'libx264',  # Changed from 'copy' to 'libx264'
+        '-preset', 'fast',  # Add preset for faster encoding
+        '-pix_fmt', 'yuv420p',  # Ensure compatibility
+        '-c:a', 'aac',
+        '-shortest',
+        output_path
+    ], input=video_buffer.read(), check=True, capture_output=True)
+    # Optional: Save as GIF
+    """ gif_path = f"data/figures/{site}_animation.gif"
+    print("Saving GIF...")
+    imageio.mimsave(gif_path, frames, fps=20, loop=0)
+    print(f"✓ GIF saved to {gif_path}")"""
+    
+    # Close figure to free memory
+    plt.close(fig)
+    
+    return output_path
+    # Save final frame as static image
+    #plt.savefig(f"data/figures/{site}_animation_{resample_interval}_sample_rate_{sample_rate}_hertz_{hertz}.png")
+    #58a, 02a, 11u_solar_radiation  data\raw_hydrological_data\11u_solar_radiation_raw_data.csv
 #"11u_solar_radiation"
-site = "02a" #"11u_solar_radiation_day" # f"data/raw_hydrological_data/{site}_raw_data.csv"
-resample_interval = '3D' #'15T' # '1D' '1H'
-
+site = "58a" #"58a" #"11u_solar_radiation_day" # f"data/raw_hydrological_data/{site}_raw_data.csv"
+resample_interval =  '5D' #'3D'#'15T' # '1D' '1H'
+hertz = 138.81 #261.625565
 sample_rate = 800 # higher sample rate will speed it up
+# 800 is pretty good  # 2000 is a good sample rate for 1D but you will ned to lower the hertz because it gets kinda high
 
 # convert to frequency 
 #hertz = 261.625565
@@ -179,4 +275,5 @@ sample_rate = 800 # higher sample rate will speed it up
 # b3: 246.9417
 # a3: 220.0000
 # c3 130.81
-get_data(site = site, resample_interval = resample_interval, sample_rate = sample_rate, hertz = 261.625565)
+combined_df = get_data(site, resample_interval, sample_rate, hertz)
+make_video(site, resample_interval, sample_rate, hertz, combined_df)
