@@ -5,9 +5,12 @@ import matplotlib.pyplot as plt
 from pydub import AudioSegment
 import matplotlib.animation as animation
 from PIL import Image
+import soundfile as sf
+import os
 import subprocess
 from matplotlib.backends.backend_agg import FigureCanvasAgg
 import imageio
+import matplotlib.dates as mdates
 import io
 import matplotlib.animation as animation
 # Using FFMpegWriter with more control
@@ -49,7 +52,8 @@ def create_sine_wave(amplitude, frequency, num_samples, sample_rate, datetime):
 def get_data(site, resample_interval, sample_rate, hertz):
     raw = pd.read_csv(f"data/raw_hydrological_data/{site}_raw_data.csv", header=0, parse_dates=[0], names=["datetime", "data"])
     raw["data"] = pd.to_numeric(raw["data"], errors='coerce')
-    raw = raw[(raw["datetime"] >= "2024-10-01") & (raw["datetime"] <= "2025-10-01")]
+    raw = raw[(raw["datetime"] >= "2024-10-01") & (raw["datetime"] <= "2024-10-20")]
+    #raw = raw[(raw["datetime"] >= "2024-10-01") & (raw["datetime"] <= "2024-12-01")]
     
     raw = raw.set_index('datetime').resample(resample_interval).mean()
     #raw = raw.set_index('datetime').resample('6h').mean()
@@ -102,7 +106,7 @@ def get_data(site, resample_interval, sample_rate, hertz):
     wavfile.write(f"data/sound_files/{site}_soundfile_resample interval {resample_interval} sample rate_{sample_rate}_hertz_{hertz}.wav", sample_rate, audio_data)
     #save as mp3
     # Write temp WAV first
-    temp_wav = "temp.wav"
+    """temp_wav = "temp.wav"
     wavfile.write(temp_wav, sample_rate, audio_data)
      # Calculate mean amplitude by datetime
     combined_df['mean_amplitude'] = combined_df.groupby('datetime')['amplitude'].transform('mean')
@@ -127,7 +131,7 @@ def get_data(site, resample_interval, sample_rate, hertz):
     ax2.set_ylim(combined_df['frequency'].min(), combined_df['frequency'].max())
     
     plt.close(fig)
-    plt.savefig(f"data/figures/{site}_animation_{resample_interval}_sample_rate_{sample_rate}_hertz_{hertz}.png")
+    plt.savefig(f"data/figures/{site}_animation_{resample_interval}_sample_rate_{sample_rate}_hertz_{hertz}.png")"""
 
     return combined_df
 
@@ -171,33 +175,80 @@ def make_video(site, resample_interval, sample_rate, hertz, combined_df):
     dpi = 100
     width_inches = 1200 / dpi  # = 12 inches = 1200 pixels
     height_inches = 608 / dpi  # = 6.08 inches = 608 pixels
-    
+    print(combined_df)
     fig, ax1 = plt.subplots(1, 1, figsize=(width_inches, height_inches), dpi=dpi)
-    
+    # Add title
+    plt.title(f'{site.replace("_", " ").title()}', fontsize=14, fontweight='bold')
     # Configure primary axis (amplitude)
     color = 'tab:blue'
-    ax1.set_xlabel('Index', fontsize=12)
-    ax1.set_ylabel('Mean Amplitude', color=color, fontsize=12)
-    line1, = ax1.plot([], [], color=color, linewidth=2, label='Mean Amplitude')
+    #ax1.set_xlabel('Time', fontsize=12)
+    ax1.set_ylabel('Sound Data', color=color, fontsize=12)
+    line1, = ax1.plot([], [], color=color, linewidth=2, label='Sound Data')
     ax1.tick_params(axis='y', labelcolor=color)
     ax1.grid(True, alpha=0.3)
     ax1.set_xlim(combined_df.index.min(), combined_df.index.max())
     ax1.set_ylim(combined_df['amplitude'].min(), combined_df['amplitude'].max())
-    
+    ax1.set_yticks([])
+    # Set x-axis to show only first and last datetime
+    first_idx = combined_df.index[0]
+    last_idx = combined_df.index[-1]
+    first_date = combined_df['datetime'].iloc[0].strftime('%Y-%m-%d')
+    last_date = combined_df['datetime'].iloc[-1].strftime('%Y-%m-%d')
+
+    ax1.set_xticks([first_idx, last_idx])
+    ax1.set_xticklabels([first_date, last_date])
+    plt.setp(ax1.xaxis.get_majorticklabels(), rotation=0, ha='center')
+
     # Configure secondary axis (frequency)
     ax2 = ax1.twinx()
     color = 'tab:orange'
-    ax2.set_ylabel('Frequency', color=color, fontsize=12)
-    line2, = ax2.plot([], [], color=color, linewidth=2, label='Frequency')
+    ax2.set_ylabel('Standardized Data', color=color, fontsize=12)
+    
+    # Add permanent (static) frequency line
+    line2_permanent, = ax2.plot(combined_df.index, combined_df['frequency'], 
+                                 color=color, linewidth=1, alpha=0.6, 
+                                 label='Standardized Data (full)')
+    
+    # Add animated frequency line that gets traced
+    line2, = ax2.plot([], [], color=color, linewidth=2, label='Standardized Data')
+    
     ax2.tick_params(axis='y', labelcolor=color)
     ax2.set_ylim(combined_df['frequency'].min(), combined_df['frequency'].max())
-    
+    ax2.set_yticks([])  # Hide the tick labels
+
     # Add vertical line marker and time display
     vline = ax1.axvline(x=combined_df.index[0], color='red', linewidth=2, 
                         linestyle='--', label='Current Position')
-   
+
     plt.tight_layout()
-    
+
+    def create_title_frame(fig, site, duration_seconds):
+        """Create a title slide frame"""
+        title_fig = plt.figure(figsize=fig.get_size_inches(), dpi=fig.dpi)
+        title_fig.patch.set_facecolor('white')
+        
+        ax = title_fig.add_subplot(111)
+        ax.axis('off')
+        
+        # Add title text (customize as needed)
+        ax.text(0.5, 0.6, f'{site.replace("_", " ").title()} Sonification', 
+                ha='center', va='center', fontsize=32, fontweight='bold')
+        ax.text(0.5, 0.4, f'Resample: {resample_interval} | Sample Rate: {sample_rate} Hz | Frequency: {hertz} Hz',
+                ha='center', va='center', fontsize=16, alpha=0.7)
+        #ax.text(0.5, 0.2, 'Audio-Visual Data Representation',
+        #        ha='center', va='center', fontsize=14, alpha=0.5, style='italic')
+        
+        ax.set_xlim(0, 1)
+        ax.set_ylim(0, 1)
+        
+        # Render to array
+        canvas = FigureCanvasAgg(title_fig)
+        canvas.draw()
+        img = np.asarray(canvas.buffer_rgba()).copy()
+        plt.close(title_fig)
+        
+        return img[:, :, :3]  # Remove alpha channel
+
     def update(frame):
         """Update animation for given frame number"""
         n_points = len(combined_df)
@@ -207,21 +258,25 @@ def make_video(site, resample_interval, sample_rate, hertz, combined_df):
         # Update data lines
         line1.set_data(combined_df.index[:current_idx], combined_df['amplitude'][:current_idx])
         line2.set_data(combined_df.index[:current_idx], combined_df['frequency'][:current_idx])
-        
         # Update vertical line position
         if current_idx > 0:
             vline.set_xdata([combined_df.index[current_idx]])
         
-        # Update frame info text
-        #time_text.set_text(f'Frame: {frame}\nIndex: {current_idx}')
-        
-        return line1, line2, vline, #time_text
+        return line1, line2, line2_permanent, vline,
     
+    # Generate title frames
+    title_duration_seconds = 3  # Duration of title slide
+    title_frames_count = int(title_duration_seconds * fps)
+    
+    print("Generating title slide...")
+    title_frame = create_title_frame(fig, site, title_duration_seconds)
+    frames = [title_frame] * title_frames_count  # Repeat title frame
     # Generate video frames
-    frames = []
+    #frames = []
+    # Generate animation frames
     canvas = FigureCanvasAgg(fig)
     
-    print("Generating frames...")
+    print("Generating animation frames...")
     for frame_num in range(n_frames):
         update(frame_num)
         canvas.draw()
@@ -236,39 +291,60 @@ def make_video(site, resample_interval, sample_rate, hertz, combined_df):
     print("Saving video...")
     imageio.mimsave(video_no_audio_path, frames, fps=fps)
     
-    # Combine video with audio using ffmpeg
+    # Create silent audio for title duration
+    print("Creating audio with silence padding...")
+    temp_audio_path = f"data/figures/{site}_temp_audio_padded.wav"
+    
+    # Load original audio
+    audio_data, sr = sf.read(audio_path)
+    
+    # Create silence for title duration
+    silence_samples = int(title_duration_seconds * sr)
+    silence = np.zeros((silence_samples, audio_data.shape[1] if len(audio_data.shape) > 1 else 1))
+    
+    # Concatenate silence and audio
+    if len(audio_data.shape) == 1:
+        padded_audio = np.concatenate([silence.flatten(), audio_data])
+    else:
+        padded_audio = np.concatenate([silence, audio_data])
+    
+    # Save padded audio
+    sf.write(temp_audio_path, padded_audio, sr)
+    
+    # Combine video with padded audio using ffmpeg
     ffmpeg_path = r"C:\Users\ianrh\AppData\Local\Programs\Python\Python312\Lib\site-packages\imageio_ffmpeg\binaries\ffmpeg-win-x86_64-v7.1.exe"
     output_path = f"data/figures/{site}_animation_{resample_interval}_sample_rate_{sample_rate}_hertz_{hertz}.mp4"
     
     print(f"Combining video and audio...")
     print(f"  Video: {video_no_audio_path}")
-    print(f"  Audio: {audio_path}")
+    print(f"  Audio: {temp_audio_path}")
     print(f"  Output: {output_path}")
     
     subprocess.run([
         ffmpeg_path, '-y',
         '-i', video_no_audio_path,
-        '-i', audio_path,
+        '-i', temp_audio_path,
         '-c:v', 'copy',
         '-c:a', 'aac',
         '-shortest',
         output_path
     ], check=True, capture_output=True, text=True)
     
-    print(f"✓ Video with audio saved to {output_path}")
-    ### need to remove video without audio  # Save video without audio
-    ##video_no_audio_path = f"data/figures/{site}_animation_no_audio.mp4"
-    # Close figure to free memory
+    # Clean up temporary audio file
+   
+    os.remove(temp_audio_path)
+    os.remove(video_no_audio_path)
+    print(f"Done! Video saved to: {output_path}")
     plt.close(fig)
     
     return output_path
     
     #58a, 02a, 11u_solar_radiation  data\raw_hydrological_data\11u_solar_radiation_raw_data.csv
 #"11u_solar_radiation"
-site = "cherry_creek_water_temperature" #"58a" #"11u_solar_radiation_day" # f"data/raw_hydrological_data/{site}_raw_data.csv"
+site = "cherry_creek_discharge" #"58a" #"11u_solar_radiation_day" # f"data/raw_hydrological_data/{site}_raw_data.csv"
 resample_interval =  '1D' #'3D'#'15T' # '1D' '1H'
 hertz = 246.9417
-sample_rate =  1500# higher sample rate will speed it up
+sample_rate =  2000# higher sample rate will speed it up
 # 800 is pretty good
 
 # convert to frequency 
