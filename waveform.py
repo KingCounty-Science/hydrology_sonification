@@ -52,7 +52,7 @@ def create_sine_wave(amplitude, frequency, num_samples, sample_rate, datetime):
 def get_data(site, resample_interval, sample_rate, hertz):
     raw = pd.read_csv(f"data/raw_hydrological_data/{site}_raw_data.csv", header=0, parse_dates=[0], names=["datetime", "data"])
     raw["data"] = pd.to_numeric(raw["data"], errors='coerce')
-    raw = raw[(raw["datetime"] >= "2024-10-01") & (raw["datetime"] <= "2024-10-20")]
+    raw = raw[(raw["datetime"] >= "2024-10-01") & (raw["datetime"] <= "2025-10-01")]
     #raw = raw[(raw["datetime"] >= "2024-10-01") & (raw["datetime"] <= "2024-12-01")]
     
     raw = raw.set_index('datetime').resample(resample_interval).mean()
@@ -342,9 +342,9 @@ def make_video(site, resample_interval, sample_rate, hertz, combined_df):
     #58a, 02a, 11u_solar_radiation  data\raw_hydrological_data\11u_solar_radiation_raw_data.csv
 #"11u_solar_radiation"
 site = "cherry_creek_discharge" #"58a" #"11u_solar_radiation_day" # f"data/raw_hydrological_data/{site}_raw_data.csv"
-resample_interval =  '1D' #'3D'#'15T' # '1D' '1H'
+resample_interval =  '30T' #'3D'#'15T' # '1D' '1H'
 hertz = 246.9417
-sample_rate =  2000# higher sample rate will speed it up
+sample_rate =  1500# higher sample rate will speed it up
 # 800 is pretty good
 
 # convert to frequency 
