@@ -173,7 +173,7 @@ def make_video(site, resample_interval, sample_rate, hertz, combined_df):
     dpi = 100
     width_inches = 1200 / dpi  # = 12 inches = 1200 pixels
     height_inches = 608 / dpi  # = 6.08 inches = 608 pixels
-    
+    print(combined_df)
     fig, ax1 = plt.subplots(1, 1, figsize=(width_inches, height_inches), dpi=dpi)
     # Add title
     plt.title(f'{site.replace("_", " ").title()}', fontsize=14, fontweight='bold')
@@ -218,6 +218,31 @@ def make_video(site, resample_interval, sample_rate, hertz, combined_df):
                         linestyle='--', label='Current Position')
 
     plt.tight_layout()
+
+    def create_title_frame(site, resample_interval, sample_rate, hertz, width_inches, height_inches, dpi):
+        """Create a title slide frame using matplotlib"""
+        title_fig = plt.figure(figsize=(width_inches, height_inches), dpi=dpi)
+        title_fig.patch.set_facecolor('white')
+        
+        ax = title_fig.add_subplot(111)
+        ax.axis('off')
+        
+        # Add title text
+        ax.text(0.5, 0.6, f'{site.replace("_", " ").title()} Sonification', 
+                ha='center', va='center', fontsize=32, fontweight='bold')
+        ax.text(0.5, 0.4, f'Resample: {resample_interval} | Sample Rate: {sample_rate} Hz | Frequency: {hertz} Hz',
+                ha='center', va='center', fontsize=16, alpha=0.7)
+        
+        ax.set_xlim(0, 1)
+        ax.set_ylim(0, 1)
+        
+        # Render to array
+        canvas = FigureCanvasAgg(title_fig)
+        canvas.draw()
+        img = np.asarray(canvas.buffer_rgba()).copy()
+        plt.close(title_fig)
+        
+        return img[:, :, :3]  # Remove alpha channel
 
     def update(frame):
         """Update animation for given frame number"""
@@ -283,23 +308,15 @@ def make_video(site, resample_interval, sample_rate, hertz, combined_df):
         main_video_path
     ], check=True, capture_output=True, text=True)
     
-    # Create title slide video using ffmpeg
+    # Create title slide video using matplotlib
     print("Creating title slide...")
     title_duration = 3  # seconds
-    title_text = f"{site.replace('_', ' ').title()} Sonification"
-    subtitle_text = f"Resample: {resample_interval} | Sample Rate: {sample_rate} Hz | Frequency: {hertz} Hz"
+    title_frame = create_title_frame(site, resample_interval, sample_rate, hertz, 
+                                      width_inches, height_inches, dpi)
     
-    # Create title slide with ffmpeg (black background with white text)
-    subprocess.run([
-        ffmpeg_path, '-y',
-        '-f', 'lavfi',
-        '-i', f'color=c=black:s=1200x608:d={title_duration}:r={fps}',
-        '-vf', f"drawtext=text='{title_text}':fontcolor=white:fontsize=40:x=(w-text_w)/2:y=(h-text_h)/2-50:fontfile=/Windows/Fonts/arial.ttf,"
-               f"drawtext=text='{subtitle_text}':fontcolor=white:fontsize=20:x=(w-text_w)/2:y=(h-text_h)/2+50:fontfile=/Windows/Fonts/arial.ttf",
-        '-c:v', 'libx264',
-        '-preset', 'fast',
-        title_video_path
-    ], check=True, capture_output=True, text=True)
+    # Create video from single frame repeated
+    title_frames = [title_frame] * int(title_duration * fps)
+    imageio.mimsave(title_video_path, title_frames, fps=fps)  # type: ignore
     
     # Create silent audio for title duration
     print("Creating padded audio...")
@@ -351,7 +368,7 @@ def make_video(site, resample_interval, sample_rate, hertz, combined_df):
 site = "cherry_creek_discharge" #"58a" #"11u_solar_radiation_day" # f"data/raw_hydrological_data/{site}_raw_data.csv"
 resample_interval =  '1D' #'180T' #'3D'#'15T' # '1D' '1H'
 hertz = 246.9417
-sample_rate =  2000# higher sample rate will speed it up
+sample_rate =  1000# higher sample rate will speed it up
 # 800 is pretty good
 
 # convert to frequency 
