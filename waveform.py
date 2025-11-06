@@ -153,8 +153,6 @@ def make_video(site, resample_interval, sample_rate, hertz, combined_df):
         DataFrame containing 'amplitude' and 'frequency' columns with datetime index
     """
     
-   
-    
     # Get audio duration to determine video length
     audio_path = f"data/sound_files/{site}_soundfile_resample interval {resample_interval} sample rate_{sample_rate}_hertz_{hertz}.wav"
     
@@ -167,7 +165,7 @@ def make_video(site, resample_interval, sample_rate, hertz, combined_df):
     print(f"Audio duration: {audio_duration:.2f} seconds")
     
     # Calculate number of video frames needed
-    fps = 15
+    fps = 10
     n_frames = int(audio_duration * fps)
     print(f"Generating {n_frames} frames at {fps} fps")
     
@@ -175,13 +173,12 @@ def make_video(site, resample_interval, sample_rate, hertz, combined_df):
     dpi = 100
     width_inches = 1200 / dpi  # = 12 inches = 1200 pixels
     height_inches = 608 / dpi  # = 6.08 inches = 608 pixels
-    print(combined_df)
+    
     fig, ax1 = plt.subplots(1, 1, figsize=(width_inches, height_inches), dpi=dpi)
     # Add title
     plt.title(f'{site.replace("_", " ").title()}', fontsize=14, fontweight='bold')
     # Configure primary axis (amplitude)
     color = 'tab:blue'
-    #ax1.set_xlabel('Time', fontsize=12)
     ax1.set_ylabel('Sound Data', color=color, fontsize=12)
     line1, = ax1.plot([], [], color=color, linewidth=2, label='Sound Data')
     ax1.tick_params(axis='y', labelcolor=color)
@@ -222,33 +219,6 @@ def make_video(site, resample_interval, sample_rate, hertz, combined_df):
 
     plt.tight_layout()
 
-    def create_title_frame(fig, site, duration_seconds):
-        """Create a title slide frame"""
-        title_fig = plt.figure(figsize=fig.get_size_inches(), dpi=fig.dpi)
-        title_fig.patch.set_facecolor('white')
-        
-        ax = title_fig.add_subplot(111)
-        ax.axis('off')
-        
-        # Add title text (customize as needed)
-        ax.text(0.5, 0.6, f'{site.replace("_", " ").title()} Sonification', 
-                ha='center', va='center', fontsize=32, fontweight='bold')
-        ax.text(0.5, 0.4, f'Resample: {resample_interval} | Sample Rate: {sample_rate} Hz | Frequency: {hertz} Hz',
-                ha='center', va='center', fontsize=16, alpha=0.7)
-        #ax.text(0.5, 0.2, 'Audio-Visual Data Representation',
-        #        ha='center', va='center', fontsize=14, alpha=0.5, style='italic')
-        
-        ax.set_xlim(0, 1)
-        ax.set_ylim(0, 1)
-        
-        # Render to array
-        canvas = FigureCanvasAgg(title_fig)
-        canvas.draw()
-        img = np.asarray(canvas.buffer_rgba()).copy()
-        plt.close(title_fig)
-        
-        return img[:, :, :3]  # Remove alpha channel
-
     def update(frame):
         """Update animation for given frame number"""
         n_points = len(combined_df)
@@ -264,87 +234,124 @@ def make_video(site, resample_interval, sample_rate, hertz, combined_df):
         
         return line1, line2, line2_permanent, vline,
     
-    # Generate title frames
-    title_duration_seconds = 3  # Duration of title slide
-    title_frames_count = int(title_duration_seconds * fps)
+    # Define file paths
+    video_no_audio_path = f"data/figures/{site}_animation_no_audio.mp4"
+    temp_audio_path = f"data/figures/{site}_temp_audio.wav"
+    main_video_path = f"data/figures/{site}_animation_main.mp4"
+    title_video_path = f"data/figures/{site}_title_slide.mp4"
+    output_path = f"data/figures/{site}_animation_{resample_interval}_sample_rate_{sample_rate}_hertz_{hertz}.mp4"
+    ffmpeg_path = r"C:\Users\ianrh\AppData\Local\Programs\Python\Python312\Lib\site-packages\imageio_ffmpeg\binaries\ffmpeg-win-x86_64-v7.1.exe"
+
+    frame_skip = 3  # Adjust based on animation smoothness needs
+    frames = []
     
-    print("Generating title slide...")
-    title_frame = create_title_frame(fig, site, title_duration_seconds)
-    frames = [title_frame] * title_frames_count  # Repeat title frame
-    # Generate video frames
-    #frames = []
-    # Generate animation frames
     canvas = FigureCanvasAgg(fig)
-    
-    print("Generating animation frames...")
-    for frame_num in range(n_frames):
+    print(f"Generating animation frames (every {frame_skip} frames)...")
+
+    for i, frame_num in enumerate(range(0, n_frames, frame_skip)):
         update(frame_num)
         canvas.draw()
-        img = np.asarray(canvas.buffer_rgba()).copy()
-        frames.append(img[:, :, :3])  # Remove alpha channel
+        buf = canvas.buffer_rgba()
+        img = np.frombuffer(buf, dtype=np.uint8).reshape(buf.shape[0], buf.shape[1], 4)
+        frames.append(img[:, :, :3].copy())
         
-        if frame_num % 100 == 0:
-            print(f"Frame {frame_num}/{n_frames}")
-    
-    # Save video without audio
-    video_no_audio_path = f"data/figures/{site}_animation_no_audio.mp4"
+        if i % 50 == 0:
+            print(f"Frame {i}/{n_frames//frame_skip}")
+
+    # Save with adjusted fps
     print("Saving video...")
-    imageio.mimsave(video_no_audio_path, frames, fps=fps)
-    
-    # Create silent audio for title duration
-    print("Creating audio with silence padding...")
-    temp_audio_path = f"data/figures/{site}_temp_audio_padded.wav"
-    
-    # Load original audio
+    reduced_fps = fps / frame_skip
+    imageio.mimsave(video_no_audio_path, frames, fps=reduced_fps)  # type: ignore
+
+    # Copy audio (no padding needed)
+    print("Preparing audio...")
     audio_data, sr = sf.read(audio_path)
-    
-    # Create silence for title duration
-    silence_samples = int(title_duration_seconds * sr)
-    silence = np.zeros((silence_samples, audio_data.shape[1] if len(audio_data.shape) > 1 else 1))
-    
-    # Concatenate silence and audio
-    if len(audio_data.shape) == 1:
-        padded_audio = np.concatenate([silence.flatten(), audio_data])
-    else:
-        padded_audio = np.concatenate([silence, audio_data])
-    
-    # Save padded audio
-    sf.write(temp_audio_path, padded_audio, sr)
-    
-    # Combine video with padded audio using ffmpeg
-    ffmpeg_path = r"C:\Users\ianrh\AppData\Local\Programs\Python\Python312\Lib\site-packages\imageio_ffmpeg\binaries\ffmpeg-win-x86_64-v7.1.exe"
-    output_path = f"data/figures/{site}_animation_{resample_interval}_sample_rate_{sample_rate}_hertz_{hertz}.mp4"
-    
+    sf.write(temp_audio_path, audio_data, sr)
+
+    # Use ffmpeg to combine and restore proper fps
     print(f"Combining video and audio...")
-    print(f"  Video: {video_no_audio_path}")
-    print(f"  Audio: {temp_audio_path}")
-    print(f"  Output: {output_path}")
     
     subprocess.run([
         ffmpeg_path, '-y',
         '-i', video_no_audio_path,
         '-i', temp_audio_path,
+        '-r', str(fps),
+        '-c:v', 'libx264',
+        '-preset', 'fast',
+        '-c:a', 'aac',
+        '-shortest',
+        main_video_path
+    ], check=True, capture_output=True, text=True)
+    
+    # Create title slide video using ffmpeg
+    print("Creating title slide...")
+    title_duration = 3  # seconds
+    title_text = f"{site.replace('_', ' ').title()} Sonification"
+    subtitle_text = f"Resample: {resample_interval} | Sample Rate: {sample_rate} Hz | Frequency: {hertz} Hz"
+    
+    # Create title slide with ffmpeg (black background with white text)
+    subprocess.run([
+        ffmpeg_path, '-y',
+        '-f', 'lavfi',
+        '-i', f'color=c=black:s=1200x608:d={title_duration}:r={fps}',
+        '-vf', f"drawtext=text='{title_text}':fontcolor=white:fontsize=40:x=(w-text_w)/2:y=(h-text_h)/2-50:fontfile=/Windows/Fonts/arial.ttf,"
+               f"drawtext=text='{subtitle_text}':fontcolor=white:fontsize=20:x=(w-text_w)/2:y=(h-text_h)/2+50:fontfile=/Windows/Fonts/arial.ttf",
+        '-c:v', 'libx264',
+        '-preset', 'fast',
+        title_video_path
+    ], check=True, capture_output=True, text=True)
+    
+    # Create silent audio for title duration
+    print("Creating padded audio...")
+    silence_samples = int(title_duration * sr)
+    silence = np.zeros((silence_samples, audio_data.shape[1] if len(audio_data.shape) > 1 else 1))
+    
+    if len(audio_data.shape) == 1:
+        padded_audio = np.concatenate([silence.flatten(), audio_data])
+    else:
+        padded_audio = np.concatenate([silence, audio_data])
+    
+    temp_padded_audio_path = f"data/figures/{site}_temp_audio_padded.wav"
+    sf.write(temp_padded_audio_path, padded_audio, sr)
+    
+    # Concatenate title and main video
+    print("Concatenating title slide and main video...")
+    concat_list_path = f"data/figures/{site}_concat_list.txt"
+    with open(concat_list_path, 'w') as f:
+        f.write(f"file '{os.path.abspath(title_video_path)}'\n")
+        f.write(f"file '{os.path.abspath(main_video_path)}'\n")
+    
+    # Final concatenation with padded audio
+    subprocess.run([
+        ffmpeg_path, '-y',
+        '-f', 'concat',
+        '-safe', '0',
+        '-i', concat_list_path,
+        '-i', temp_padded_audio_path,
         '-c:v', 'copy',
         '-c:a', 'aac',
         '-shortest',
         output_path
     ], check=True, capture_output=True, text=True)
     
-    # Clean up temporary audio file
-   
+    # Clean up temporary files
     os.remove(temp_audio_path)
     os.remove(video_no_audio_path)
+    os.remove(main_video_path)
+    os.remove(title_video_path)
+    os.remove(temp_padded_audio_path)
+    os.remove(concat_list_path)
+    
     print(f"Done! Video saved to: {output_path}")
     plt.close(fig)
     
     return output_path
-    
     #58a, 02a, 11u_solar_radiation  data\raw_hydrological_data\11u_solar_radiation_raw_data.csv
 #"11u_solar_radiation"
 site = "cherry_creek_discharge" #"58a" #"11u_solar_radiation_day" # f"data/raw_hydrological_data/{site}_raw_data.csv"
-resample_interval =  '30T' #'3D'#'15T' # '1D' '1H'
+resample_interval =  '1D' #'180T' #'3D'#'15T' # '1D' '1H'
 hertz = 246.9417
-sample_rate =  1500# higher sample rate will speed it up
+sample_rate =  2000# higher sample rate will speed it up
 # 800 is pretty good
 
 # convert to frequency 
