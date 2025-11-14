@@ -26,22 +26,25 @@ def create_sine_wave(amplitude, frequency, num_samples, sample_rate, datetime):
     frequency : Frequency in Hz (default: 1)
     num_samples : Number of data points/rows (default: 1000)
     sample_rate : Number of samples per second (default: 100)'''
-    
-    # Calculate duration from number of samples
-    duration = num_samples / sample_rate
-    period = 1 / frequency
-    cycles = duration / period
-    desired_cycles = round(cycles, 0)
-    duration = desired_cycles * period
-    # Create time array - use endpoint=False to exclude the last point
-    # This ensures the wave ends at zero and doesn't overlap with next cycle
-    t = np.linspace(0, duration, num_samples, endpoint=False) 
-    # Create sine wave
-    sine_wave = amplitude * np.sin(2 * np.pi * frequency * t)
-    
+   
+    duration = num_samples / sample_rate  # duration in seconds
+    period = abs(1 / frequency)
+    cycles = round(duration / period, 0).astype(int)
+
+    frequency = frequency.astype(int)
+
+    # Define signal parameters
+    fs = sample_rate  # sampling frequency (Hz)
+
+    # Create time array for the actual duration
+    time = np.linspace(0, duration, num_samples, endpoint=False)
+
+    # Generate sine wave
+    sine_wave = amplitude * np.sin(2 * np.pi * frequency * time)
+    #print(sine_wave.shape)
     # Create DataFrame
     df = pd.DataFrame({
-        'time': t,
+        'time': time,
         'amplitude': sine_wave,
         'frequency': frequency,
         'datetime': datetime
@@ -49,10 +52,16 @@ def create_sine_wave(amplitude, frequency, num_samples, sample_rate, datetime):
     
     return df, sine_wave
 
-def get_data(site, resample_interval, sample_rate, hertz):
+def get_data(site, resample_interval, sample_rate, hertz, start_date=None, end_date=None):
     raw = pd.read_csv(f"data/raw_hydrological_data/{site}_raw_data.csv", header=0, parse_dates=[0], names=["datetime", "data"])
     raw["data"] = pd.to_numeric(raw["data"], errors='coerce')
-    raw = raw[(raw["datetime"] >= "2024-10-01") & (raw["datetime"] <= "2025-10-01")]
+    
+    # Only filter if both dates are provided
+    if start_date is not None and end_date is not None:
+        raw = raw[(raw["datetime"] >= start_date) & (raw["datetime"] <= end_date)]
+    else:
+        start_date = raw["datetime"].min().strftime('%Y-%m-%d')
+        end_date = raw["datetime"].max().strftime('%Y-%m-%d')
     #raw = raw[(raw["datetime"] >= "2024-10-01") & (raw["datetime"] <= "2024-12-01")]
     
     raw = raw.set_index('datetime').resample(resample_interval).mean()
@@ -60,42 +69,58 @@ def get_data(site, resample_interval, sample_rate, hertz):
     raw['data_log'] = raw['data'].copy()
     raw["data_log"] = np.log1p(raw["data_log"]) # log transform handles zero and negative
 
-    raw["data_offset"] = raw["data"]
-
+    # standardized
+    #raw["std_data"] = (raw["data"] - raw["data"].min()) / (raw['data'].max() - raw["data"].min())
+    # Center data around zero, then shift to hertz
+    #raw["data_offset"] = raw["data"] - raw["data"].mean() + hertz
+    #print(raw["data_offset"].min())
     
-    offset = hertz - raw["data_offset"].mean()
+    
+    # Scale to have specific standard deviation
+    target_std = 100  # adjust this value
+    current_std = raw["data"].std()
+    raw["data_offset"] = hertz + (raw["data"] - raw["data"].mean()) * (target_std / current_std)
+    
+    raw["data_amp"] = np.log(raw["data"])
+    raw["data_amp"] = (raw["data_amp"] - raw["data_amp"].min()) / (raw['data_amp'].max() - raw["data_amp"].min())
+    #raw["data_offset"] = raw["data"] + hertz
+    
+    """offset = hertz - raw["data_offset"].mean()
     raw["data_offset"] = raw["data_offset"] + offset
 
-    raw["data_offset"] = raw["data_offset"] ** 2 # squared
+    raw["data_offset"] = raw["data_offset"] ** 2 # squared"""
    
-    offset = hertz - raw["data_offset"].mean()
-    raw["data_offset"] = raw["data_offset"] + offset
-    raw["data_offset"] = raw["data_offset"].round(0)
-    
+    #offset = hertz - raw["data_offset"].min()
+    ##raw["data_offset"] = raw["data_offset"] + offset
+    #raw["data_offset"] = raw["data_offset"].round(0)
+    #3raw["data_offset"] = (raw["data_offset"] ** 2).round(2)
+    print(raw)
+    #print(raw)
     all_dfs = []
-
-    #raw = raw[325:330]
+    
+    #raw = raw[100:105]
     for index, row in raw.iterrows():
         #sample_rate = 600 dont need to define it is set in function call
-        num_samples = 200
-        
+        num_samples = 100
+        #ample_rate = 100
+        # amplitude=4 #row['data_log'],
         df, sine_wave = create_sine_wave(
-            amplitude=row['data_log'], 
-            #amplitude=row["data"], 
+            amplitude=row["data_amp"], 
             frequency=row["data_offset"], 
             num_samples=num_samples, 
             sample_rate=sample_rate,
-            datetime = index
-        )
+            datetime = index)
+        #print(df)
         all_dfs.append(df)
-
-    # Combine all dataframes
-    combined_df = pd.concat(all_dfs, ignore_index=True)
-
+        #combined_df = pd.concat([combined_df, df], ignore_index=True)
+        combined_df = pd.concat(all_dfs, ignore_index = True)
+        #print(combined_df)
+    #combined_df = all_dfs
+    #print(combined_df)
     # Replace all zeros with NaN
-    combined_df["amplitude"] = combined_df['amplitude'].replace(0, np.nan)
-    combined_df["amplitude"] = combined_df["amplitude"].interpolate(method='linear', limit_direction='both')
-    combined_df["amplitude"] = combined_df["amplitude"] / np.max(np.abs(combined_df["amplitude"]))
+    #combined_df["amplitude"] = combined_df['amplitude'].replace(0, np.nan)
+    #combined_df["amplitude"] = combined_df["amplitude"].interpolate(method='linear', limit_direction='both')
+    #combined_df["amplitude"] = combined_df["amplitude"] / np.max(np.abs(combined_df["amplitude"]))
     #print(combined_df)
     
     #print(combined_df)
@@ -103,7 +128,7 @@ def get_data(site, resample_interval, sample_rate, hertz):
     # If that's still too quiet, amplify BEFORE converting:
     amplification = 5  # Try 1.5x, 2x, etc.
     audio_data = np.int16(sine_wave / np.max(np.abs(sine_wave)) * 32767) #32767# higher sample rate will speed it up 32767
-    wavfile.write(f"data/sound_files/{site}_soundfile_resample interval {resample_interval} sample rate_{sample_rate}_hertz_{hertz}.wav", sample_rate, audio_data)
+    wavfile.write(f"data/sound_files/{site}_soundfile_resample interval {resample_interval} sample rate_{sample_rate}_hertz_{hertz}_dates_{start_date}_{end_date}.wav", sample_rate, audio_data)
     #save as mp3
     # Write temp WAV first
     """temp_wav = "temp.wav"
@@ -132,10 +157,38 @@ def get_data(site, resample_interval, sample_rate, hertz):
     
     plt.close(fig)
     plt.savefig(f"data/figures/{site}_animation_{resample_interval}_sample_rate_{sample_rate}_hertz_{hertz}.png")"""
+    fig, ax1 = plt.subplots(1, 1, figsize=(80, 60))  # width_inches, height_inches
+    
+    # Configure primary axis (amplitude)
+    color = 'tab:blue'
+    ax1.set_xlabel('Index', fontsize=12)
+    ax1.set_ylabel('Amplitude', color=color, fontsize=12)
+    ax1.plot(combined_df.index, combined_df['amplitude'], color=color, linewidth=2, label='Amplitude')
+    ax1.tick_params(axis='y', labelcolor=color)
+    ax1.grid(True, alpha=0.3)
+    ax1.set_xlim(combined_df.index.min(), combined_df.index.max())
+    ax1.set_ylim(combined_df['amplitude'].min(), combined_df['amplitude'].max())
 
-    return combined_df
+    # Configure secondary axis (frequency)
+    ax2 = ax1.twinx()
+    color = 'tab:orange'
+    ax2.set_ylabel('Frequency', color=color, fontsize=12)
+    ax2.plot(combined_df.index, combined_df['frequency'], color=color, linewidth=4, label='Frequency')
+    ax2.tick_params(axis='y', labelcolor=color)
+    ax2.set_ylim(combined_df['frequency'].min(), combined_df['frequency'].max())
 
-def make_video(site, resample_interval, sample_rate, hertz, combined_df):
+    # Add legends
+    ax1.legend(loc='upper left')
+    ax2.legend(loc='upper right')
+
+    # Save and close
+    plt.tight_layout()
+    plt.savefig(f"data/figures/{site}_animation_{resample_interval}_sample_rate_{sample_rate}_hertz_{hertz}_dates_{start_date}_{end_date}.png", dpi=100, bbox_inches='tight')
+    #plt.show()
+    plt.close(fig)
+    return combined_df, start_date, end_date
+
+def make_video(site, resample_interval, sample_rate, hertz, combined_df, start_date, end_date):
     """
     Create an animated video visualization with audio overlay.
     
@@ -154,7 +207,7 @@ def make_video(site, resample_interval, sample_rate, hertz, combined_df):
     """
     
     # Get audio duration to determine video length
-    audio_path = f"data/sound_files/{site}_soundfile_resample interval {resample_interval} sample rate_{sample_rate}_hertz_{hertz}.wav"
+    audio_path = f"data/sound_files/{site}_soundfile_resample interval {resample_interval} sample rate_{sample_rate}_hertz_{hertz}_dates_{start_date}_{end_date}.wav"
     
     import wave
     with wave.open(audio_path, 'r') as audio_file:
@@ -163,6 +216,15 @@ def make_video(site, resample_interval, sample_rate, hertz, combined_df):
         audio_duration = frames_audio / float(rate)
     
     print(f"Audio duration: {audio_duration:.2f} seconds")
+    
+    # Calculate rolling envelope for amplitude (optimize rendering)
+    window = 50  # Adjust based on your data density
+    print("Calculating amplitude envelope...")
+    combined_df['amp_max'] = combined_df['amplitude'].rolling(window, center=True).max()
+    combined_df['amp_min'] = combined_df['amplitude'].rolling(window, center=True).min()
+    # Fill NaN values at edges
+    combined_df['amp_max'].fillna(combined_df['amplitude'], inplace=True)
+    combined_df['amp_min'].fillna(combined_df['amplitude'], inplace=True)
     
     # Calculate number of video frames needed
     fps = 10
@@ -174,55 +236,68 @@ def make_video(site, resample_interval, sample_rate, hertz, combined_df):
     width_inches = 1200 / dpi  # = 12 inches = 1200 pixels
     height_inches = 608 / dpi  # = 6.08 inches = 608 pixels
     print(combined_df)
-    fig, ax1 = plt.subplots(1, 1, figsize=(width_inches, height_inches), dpi=dpi)
-    # Add title
-    plt.title(f'{site.replace("_", " ").title()}', fontsize=14, fontweight='bold')
-    # Configure primary axis (amplitude)
-    color = 'tab:blue'
-    ax1.set_ylabel('Sound Data', color=color, fontsize=12)
-    line1, = ax1.plot([], [], color=color, linewidth=2, label='Sound Data')
-    ax1.tick_params(axis='y', labelcolor=color)
+    
+    # Create subplots with 2 rows, shared x-axis
+    fig, (ax1, ax2) = plt.subplots(2, 1, figsize=(width_inches, height_inches), dpi=dpi, 
+                                     sharex=True, gridspec_kw={'hspace': 0.15})
+    
+    # Set background color
+    fig.patch.set_facecolor('#fffaea')
+    ax1.set_facecolor('#fffaea')
+    ax2.set_facecolor('#fffaea')
+    
+    # Add main title
+    fig.suptitle(f'{site.replace("_", " ").title()}', fontsize=20, fontweight='bold', y=0.98)
+    
+    # Configure top subplot (amplitude) with title
+    ax1.set_title('Sound Data', fontsize=14, pad=10)
+    fill1 = ax1.fill_between([], [], [], color='#1f94b6', alpha=0.6)
+    ax1.tick_params(axis='y', labelcolor='#1f94b6')
     ax1.grid(True, alpha=0.3)
     ax1.set_xlim(combined_df.index.min(), combined_df.index.max())
     ax1.set_ylim(combined_df['amplitude'].min(), combined_df['amplitude'].max())
     ax1.set_yticks([])
-    # Set x-axis to show only first and last datetime
+    ax1.tick_params(axis='x', labelbottom=False)  # Hide x-axis labels on top plot
+    
+    # Add vertical line marker for top plot
+    vline1 = ax1.axvline(x=combined_df.index[0], color='#33b6c1', linewidth=2, 
+                         linestyle='--', alpha=0.7)
+    
+    # Configure bottom subplot (frequency) with title
+    ax2.set_title('Standardized Data', fontsize=14, pad=10)
+    
+    # Add permanent (static) frequency line
+    line2_permanent, = ax2.plot(combined_df.index, combined_df['frequency'], 
+                                 color='tab:orange', linewidth=1, alpha=0.6)
+    
+    # Add animated frequency line that gets traced
+    line2, = ax2.plot([], [], color='tab:orange', linewidth=2)
+    
+    ax2.tick_params(axis='y', labelcolor='tab:orange')
+    ax2.grid(True, alpha=0.3)
+    ax2.set_ylim(combined_df['frequency'].min(), combined_df['frequency'].max())
+    ax2.set_yticks([])
+    
+    # Set x-axis to show only first and last datetime (only on bottom plot)
     first_idx = combined_df.index[0]
     last_idx = combined_df.index[-1]
     first_date = combined_df['datetime'].iloc[0].strftime('%Y-%m-%d')
     last_date = combined_df['datetime'].iloc[-1].strftime('%Y-%m-%d')
-
-    ax1.set_xticks([first_idx, last_idx])
-    ax1.set_xticklabels([first_date, last_date])
-    plt.setp(ax1.xaxis.get_majorticklabels(), rotation=0, ha='center')
-
-    # Configure secondary axis (frequency)
-    ax2 = ax1.twinx()
-    color = 'tab:orange'
-    ax2.set_ylabel('Standardized Data', color=color, fontsize=12)
     
-    # Add permanent (static) frequency line
-    line2_permanent, = ax2.plot(combined_df.index, combined_df['frequency'], 
-                                 color=color, linewidth=1, alpha=0.6, 
-                                 label='Standardized Data (full)')
+    ax2.set_xticks([first_idx, last_idx])
+    ax2.set_xticklabels([first_date, last_date])
+    plt.setp(ax2.xaxis.get_majorticklabels(), rotation=0, ha='center', fontsize=14)
     
-    # Add animated frequency line that gets traced
-    line2, = ax2.plot([], [], color=color, linewidth=2, label='Standardized Data')
-    
-    ax2.tick_params(axis='y', labelcolor=color)
-    ax2.set_ylim(combined_df['frequency'].min(), combined_df['frequency'].max())
-    ax2.set_yticks([])  # Hide the tick labels
-
-    # Add vertical line marker and time display
-    vline = ax1.axvline(x=combined_df.index[0], color='red', linewidth=2, 
-                        linestyle='--', label='Current Position')
+    # Add vertical line marker for bottom plot
+    vline2 = ax2.axvline(x=combined_df.index[0], color='red', linewidth=2, 
+                         linestyle='--', alpha=0.7)
 
     plt.tight_layout()
 
     def create_title_frame(site, resample_interval, sample_rate, hertz, width_inches, height_inches, dpi):
         """Create a title slide frame using matplotlib"""
         title_fig = plt.figure(figsize=(width_inches, height_inches), dpi=dpi)
-        title_fig.patch.set_facecolor('white')
+        title_fig.patch.set_facecolor('#fffaea')
         
         ax = title_fig.add_subplot(111)
         ax.axis('off')
@@ -230,7 +305,10 @@ def make_video(site, resample_interval, sample_rate, hertz, combined_df):
         # Add title text
         ax.text(0.5, 0.6, f'{site.replace("_", " ").title()} Sonification', 
                 ha='center', va='center', fontsize=32, fontweight='bold')
-        ax.text(0.5, 0.4, f'Resample: {resample_interval} | Sample Rate: {sample_rate} Hz | Frequency: {hertz} Hz',
+        # date range
+        ax.text(0.5, 0.4, f'Date Range: {start_date} to {end_date}',
+                ha='center', va='center', fontsize=16, alpha=0.7)
+        ax.text(0.5, 0.3, f'Resample: {resample_interval} | Sample Rate: {sample_rate} Hz | Frequency: {hertz} Hz',
                 ha='center', va='center', fontsize=16, alpha=0.7)
         
         ax.set_xlim(0, 1)
@@ -246,25 +324,38 @@ def make_video(site, resample_interval, sample_rate, hertz, combined_df):
 
     def update(frame):
         """Update animation for given frame number"""
+        nonlocal fill1
+        
         n_points = len(combined_df)
         current_idx = int((frame / n_frames) * n_points)
         current_idx = min(current_idx, n_points - 1)  # Prevent index out of bounds
         
-        # Update data lines
-        line1.set_data(combined_df.index[:current_idx], combined_df['amplitude'][:current_idx])
-        line2.set_data(combined_df.index[:current_idx], combined_df['frequency'][:current_idx])
-        # Update vertical line position
-        if current_idx > 0:
-            vline.set_xdata([combined_df.index[current_idx]])
+        # Update filled area for amplitude envelope
+        x_data = combined_df.index[:current_idx]
+        y_min = combined_df['amp_min'][:current_idx]
+        y_max = combined_df['amp_max'][:current_idx]
         
-        return line1, line2, line2_permanent, vline,
+        # Remove old fill and create new one
+        fill1.remove()
+        fill1 = ax1.fill_between(x_data, y_min, y_max, 
+                                  color='tab:blue', alpha=0.6)
+        
+        # Update frequency line
+        line2.set_data(combined_df.index[:current_idx], combined_df['frequency'][:current_idx])
+        
+        # Update vertical line positions
+        if current_idx > 0:
+            vline1.set_xdata([combined_df.index[current_idx]])
+            vline2.set_xdata([combined_df.index[current_idx]])
+        
+        return fill1, line2, line2_permanent, vline1, vline2,
     
     # Define file paths
     video_no_audio_path = f"data/figures/{site}_animation_no_audio.mp4"
     temp_audio_path = f"data/figures/{site}_temp_audio.wav"
     main_video_path = f"data/figures/{site}_animation_main.mp4"
     title_video_path = f"data/figures/{site}_title_slide.mp4"
-    output_path = f"data/figures/{site}_animation_{resample_interval}_sample_rate_{sample_rate}_hertz_{hertz}.mp4"
+    output_path = f"data/figures/{site}_animation_{resample_interval}_sample_rate_{sample_rate}_hertz_{hertz}_dates_{start_date}_{end_date}.mp4"
     ffmpeg_path = r"C:\Users\ianrh\AppData\Local\Programs\Python\Python312\Lib\site-packages\imageio_ffmpeg\binaries\ffmpeg-win-x86_64-v7.1.exe"
 
     frame_skip = 3  # Adjust based on animation smoothness needs
@@ -365,12 +456,17 @@ def make_video(site, resample_interval, sample_rate, hertz, combined_df):
     return output_path
     #58a, 02a, 11u_solar_radiation  data\raw_hydrological_data\11u_solar_radiation_raw_data.csv
 #"11u_solar_radiation"
-site = "cherry_creek_discharge" #"58a" #"11u_solar_radiation_day" # f"data/raw_hydrological_data/{site}_raw_data.csv"
-resample_interval =  '1D' #'180T' #'3D'#'15T' # '1D' '1H'
+site = 'cherry_creek_discharge' #"laughing_jacobs_discharge" #"58a" #"11u_solar_radiation_day" # f"data/raw_hydrological_data/{site}_raw_data.csv"
+resample_interval =  '1D' #180T' #'180T' #'180T' #'3D'#'15T' # '1D' '1H'
+# discharge works better at 1D 
+# water temperature 3H and 2000 or less
 hertz = 246.9417
-sample_rate =  1000# higher sample rate will speed it up
-# 800 is pretty good
+sample_rate =  800#800# higher sample rate will speed it up
+# 800 is pretty goodF
 
+# set start_date and end_date change to none for full range
+start_date = "2023-10-01"
+end_date = "2024-10-01"
 # convert to frequency 
 #hertz = 261.625565
 # d4:293.6648
@@ -378,5 +474,5 @@ sample_rate =  1000# higher sample rate will speed it up
 # b3: 246.9417
 # a3: 220.0000
 # c3 130.81 # too low
-combined_df = get_data(site, resample_interval, sample_rate, hertz)
-make_video(site, resample_interval, sample_rate, hertz, combined_df)
+combined_df, start_date, end_date = get_data(site, resample_interval, sample_rate, hertz, start_date, end_date)
+make_video(site, resample_interval, sample_rate, hertz, combined_df, start_date, end_date)
